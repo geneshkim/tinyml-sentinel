@@ -1,0 +1,9 @@
+{
+ "seed": 5940,
+ "sources": {
+  "work/rootse":       {"dev": 20, "test_real": "rest"},
+  "work/nebius_clean": {"dev": 20, "test_real": "rest"},
+  "work/nebius_calib": {"calibration": "rest"},
+  "work/own_runs":     {"dev": 2, "test_real": "rest"}
+ }
+}

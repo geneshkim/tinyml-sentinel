@@ -1,0 +1,6 @@
+{"scenario": "hand_explicit_001", "agent": "A", "case": "explicit", "needs_attention": true, "from_event": 5}
+{"scenario": "hand_implicit_001", "agent": "A", "case": "implicit", "needs_attention": true, "from_event": 5}
+{"scenario": "hand_resolved_001", "agent": "A", "case": "resolved", "needs_attention": false}
+{"scenario": "hand_clean_001", "agent": "A", "case": "clean", "needs_attention": false}
+{"scenario": "hand_mix_001", "agent": "A", "case": "implicit", "needs_attention": true, "from_event": 8}
+{"scenario": "hand_mix_001", "agent": "B", "case": "clean", "needs_attention": false}
