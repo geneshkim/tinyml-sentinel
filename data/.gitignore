@@ -1,0 +1,10 @@
+# out/ (the final datasets, ~13 MB) IS committed. raw/ (downloads, 136 MB) and
+# work/ (intermediate copies of out/) stay local; anyone can rebuild them.
+raw/
+work/
+*.parquet
+catalog_*.csv
+
+# Python
+__pycache__/
+*.pyc

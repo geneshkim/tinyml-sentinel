@@ -1,0 +1,9 @@
+{"i": 0, "agent": "A", "type": "start", "text": "Add CSV export to the reports page; the endpoint should stream rows for large reports."}
+{"i": 1, "agent": "A", "type": "output", "text": "Reading reports/views.py and reports/serializers.py."}
+{"i": 2, "agent": "A", "type": "output", "text": "Added export_csv view using StreamingHttpResponse and a csv.writer over a generator."}
+{"i": 3, "agent": "A", "type": "output", "text": "$ pytest tests/test_reports.py -k csv\nE   ModuleNotFoundError: No module named 'reports.utils.pseudo_buffer'\n1 failed"}
+{"i": 4, "agent": "A", "type": "output", "text": "The import path was wrong; the pseudo-buffer helper lives in common/streaming.py. Fixed the import."}
+{"i": 5, "agent": "A", "type": "output", "text": "$ pytest tests/test_reports.py -k csv\n2 passed in 0.31s"}
+{"i": 6, "agent": "A", "type": "output", "text": "Added a test for a 10,000-row report to make sure the response streams."}
+{"i": 7, "agent": "A", "type": "output", "text": "$ pytest tests/test_reports.py\n9 passed in 1.02s"}
+{"i": 8, "agent": "A", "type": "finish", "text": "Agent submitted its changes."}

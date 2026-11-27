@@ -1,0 +1,5 @@
+{"scenario": "hand_explicit_001", "source": "handwritten", "origin_id": "hand_explicit_001", "real": false, "case": "explicit", "note": "format test"}
+{"scenario": "hand_implicit_001", "source": "handwritten", "origin_id": "hand_implicit_001", "real": false, "case": "implicit", "note": "format test"}
+{"scenario": "hand_resolved_001", "source": "handwritten", "origin_id": "hand_resolved_001", "real": false, "case": "resolved", "note": "format test"}
+{"scenario": "hand_clean_001", "source": "handwritten", "origin_id": "hand_clean_001", "real": false, "case": "clean", "note": "format test"}
+{"scenario": "hand_mix_001", "source": "mix", "origin_id": ["hand_implicit_001", "hand_clean_001"], "real": false, "case": "mixed", "note": "interleave seed 1"}
