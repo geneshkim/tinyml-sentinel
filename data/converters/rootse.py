@@ -27,6 +27,7 @@ Then:
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import sys
@@ -50,8 +51,10 @@ def load_rows(path):
             rows.extend(json.loads(line) for line in text.splitlines() if line.strip())
         else:
             data = json.loads(text)
-            if isinstance(data, dict):  # {"data": [...]} or a single instance
-                data = next((v for v in data.values() if isinstance(v, list)), [data])
+            if isinstance(data, dict):
+                # RootSE ships one run per file; a dict with original_traj is one run
+                data = [data] if "original_traj" in data else next(
+                    (v for v in data.values() if isinstance(v, list)), [data])
             rows.extend(data)
     return [r for r in rows if isinstance(r, dict) and "original_traj" in r]
 
@@ -62,29 +65,43 @@ def step_text(step):
     if isinstance(step, str):
         return step
     parts = []
+    # Some agents (AutoCodeRover) leave thought empty and write in response.
+    if not step.get("thought") and step.get("response"):
+        parts.append(str(step["response"]))
     for key in ("thought", "action", "observation"):
         val = step.get(key)
         if val:
             val = val if isinstance(val, str) else json.dumps(val)
             parts.append(val if key == "thought" else f"[{key}] {val}")
-    if not parts and step.get("response"):
-        parts.append(str(step["response"]))
     return "\n".join(parts)
 
 
+def decisive_position(row, index_base=0):
+    """Position (0-based) in original_traj of the step marked by failure_id.
+    Each RootSE step carries its own "index"; match on that when present."""
+    fid = str(row["failure_id"]).strip()
+    for pos, step in enumerate(row["original_traj"]):
+        if isinstance(step, dict) and str(step.get("index", "")).strip() == fid:
+            return pos
+    return int(fid) - index_base  # fallback when steps carry no index
+
+
 def convert(row, mapping="decisive", k=0, index_base=0):
-    sid = "rootse_" + str(row["instance_id"]).replace("/", "__")
     agent_name = f"{row.get('agent', '?')}/{row.get('model', '?')}"
-    sid += "_" + "".join(c if c.isalnum() else "-" for c in agent_name)[:40]
+    # Short ids: Windows paths max out at 260 characters. The full ids are in meta.jsonl.
+    inst = str(row["instance_id"]).replace("instance_", "").split("-v")[0]
+    inst = "".join(c if c.isalnum() else "-" for c in inst)[:32]
+    digest = hashlib.sha1(f"{row['instance_id']}|{agent_name}".encode()).hexdigest()[:6]
+    sid = f"rootse_{inst}_{digest}"
     steps = [step_text(s) for s in row["original_traj"]]
     events = single_agent_events(row.get("original_mission_prompt", ""), steps, FINISH_TEXT)
-    decisive_step = int(row["failure_id"]) - index_base   # 0-based step index
+    decisive_step = decisive_position(row, index_base)    # 0-based step position
     decisive_event = decisive_step + 1                     # event 0 is the start event
     from_event = decisive_event + (k if mapping == "plus_k" else 0)
     from_event = min(from_event, len(events) - 1)          # never past the finish event
     label = make_label(sid, "A", "implicit", from_event)
     meta = {"scenario": sid, "source": "rootse", "origin_id": f"rootse:{row['instance_id']}:{agent_name}",
-            "real": True, "case": "implicit", "agent_system": row.get("agent"), "model": row.get("model"),
+            "real": True, "case": "implicit", "instance_id": row["instance_id"], "agent_system": row.get("agent"), "model": row.get("model"),
             "repo": row.get("repo"), "decisive_event": decisive_event, "n_events": len(events),
             "note": row.get("failure_reason", "")}
     return sid, events, [label], meta
@@ -99,15 +116,26 @@ def main():
     ap.add_argument("--index-base", type=int, default=0,
                     help="TO CHECK: 0 if failure_id counts steps from 0, 1 if from 1")
     ap.add_argument("--inspect", type=int, default=0, help="print N rows around the decisive step and stop")
+    ap.add_argument("--agent", help="only runs whose agent contains this text, e.g. swe-agent or openhands")
+    ap.add_argument("--exclude-agent", nargs="*", default=[],
+                    help="drop runs whose agent contains any of these, e.g. auto-code-rover")
+    ap.add_argument("--min-steps", type=int, default=0, help="drop runs with fewer steps (not a stream)")
+    ap.add_argument("--skip", type=int, default=0, help="with --inspect: skip the first N matching runs")
     args = ap.parse_args()
     rows = load_rows(args.raw)
     print(f"loaded {len(rows)} rows")
+    rows = [r for r in rows
+            if (not args.agent or args.agent in str(r.get("agent", "")))
+            and not any(x in str(r.get("agent", "")) for x in args.exclude_agent)
+            and len(r["original_traj"]) >= args.min_steps]
+    print(f"kept {len(rows)} rows after filters")
     if args.inspect:
-        for row in rows[: args.inspect]:
-            fid = int(row["failure_id"])
+        for row in rows[args.skip: args.skip + args.inspect]:
+            fid = decisive_position(row, args.index_base)
             traj = row["original_traj"]
             print("=" * 80)
-            print(row["instance_id"], row.get("agent"), row.get("model"), f"failure_id={fid} of {len(traj)} steps")
+            print(row["instance_id"], row.get("agent"), row.get("model"),
+                  f"failure_id={row['failure_id']} -> step position {fid} of {len(traj)} steps")
             print("REASON:", row.get("failure_reason", "")[:500])
             print("STEP KEYS:", list(traj[0].keys()) if isinstance(traj[0], dict) else type(traj[0]))
             for j in range(max(0, fid - 1), min(len(traj), fid + 2)):
