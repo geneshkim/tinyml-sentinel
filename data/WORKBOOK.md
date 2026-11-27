@@ -25,9 +25,9 @@ Keep `raw/`, `work/`, `out/` on the shared Drive, not in git (3.2.3). Only the c
 ## Step-by-step
 
 ### Step 1 — Samples to Alex (today, about 30 min)
-- [ ] `python make_samples.py` then `python validate.py samples` → prints `OK`
-- [ ] `python show.py samples/scenarios/hand_mix_001.jsonl`. Check that from_event sits where you would step in.
-- [ ] Send `samples/` to Alex (for scoring tests) and Gene (for feeding a stream). This is SDD task #1.
+- [x] `python make_samples.py` then `python validate.py samples` → prints `OK`
+- [x] `python show.py samples/scenarios/hand_mix_001.jsonl`. Check that from_event sits where you would step in.
+- [x] Send `samples/` to Alex (for scoring tests) and Gene (for feeding a stream). This is SDD task #1.
 
 ### Step 2 — RootSE → implicit (Nov 26) ✅ mostly done
 - [x] Download RootSE in Colab, zip it, and unzip into `raw\rootse`. (If Windows says the path is too long, the `.cache` folder can be skipped.)
