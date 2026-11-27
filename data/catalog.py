@@ -19,14 +19,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "con
 
 
 def build(raw, out_csv):
-    from rootse import load_rows, step_text
+    from rootse import decisive_position, load_rows, step_text
     rows = load_rows(raw)
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["instance_id", "agent", "model", "failure_id", "n_steps", "pattern",
                     "failure_reason", "decisive_step_text"])
         for r in rows:
-            fid = int(r["failure_id"])
+            fid = decisive_position(r)
             traj = r["original_traj"]
             step = step_text(traj[fid]) if 0 <= fid < len(traj) else ""
             w.writerow([r["instance_id"], r.get("agent"), r.get("model"), fid, len(traj), "",

@@ -29,20 +29,25 @@ Keep `raw/`, `work/`, `out/` on the shared Drive, not in git (3.2.3). Only the c
 - [ ] `python show.py samples/scenarios/hand_mix_001.jsonl`. Check that from_event sits where you would step in.
 - [ ] Send `samples/` to Alex (for scoring tests) and Gene (for feeding a stream). This is SDD task #1.
 
-### Step 2 — RootSE → implicit (Nov 26)
-- [ ] Download RootSE in Colab (`huggingface_hub.snapshot_download("dengdan1999/RootSE", repo_type="dataset", local_dir="raw/rootse")`). Copy `raw/rootse` to here.
-- [ ] `python converters/rootse.py raw/rootse --inspect 5`
-  - Do the step keys say `thought`, `action`, `observation`? If not, fix `step_text()`.
-  - Does the step marked `<== failure_id` match the REASON? If the step *after* it matches better, use `--index-base 1`.
-- [ ] `python converters/rootse.py raw/rootse --out work/rootse`, then `python validate.py work/rootse`
-- [ ] Look at the stats line. Is approx_tokens_per_scenario reasonable? Tell Gene the numbers (stream lengths, 7.2).
+### Step 2 — RootSE → implicit (Nov 26) ✅ mostly done
+- [x] Download RootSE in Colab, zip it, and unzip into `raw\rootse`. (If Windows says the path is too long, the `.cache` folder can be skipped.)
+- [x] `python converters/rootse.py raw/rootse --inspect 5`. Step keys are `thought/response/action/observation`. Each step carries its own `index`, so failure_id is matched on that and `--index-base` is not needed.
+- [x] Finding: AutoCodeRover runs are 3–4 single-shot steps (search, diagnose, patch) with no visible failure, so they are not a monitoring stream. They are excluded.
+- [x] `python converters/rootse.py raw/rootse --out work/rootse --exclude-agent auto-code-rover --min-steps 8` → 92 runs
+- [x] `python validate.py work/rootse` → OK. Median 58 events and about 16k tokens per run (max about 44k). The marked step is about 35–44% of the way into a run.
+- [x] Delete the old `work\rootse`, and rename `work\rootse_new` → `work\rootse`
+- [ ] Tell Gene the token numbers (stream lengths, 7.2)
+- [ ] (For Step 5) Hand-check about 20 long runs: `--agent swe-agent --inspect 3 --skip N`, then `show.py ... --around <marked> --radius 10`. Record the marked event, where your rule would step in, and the gap.
 
-### Step 3 — nebius → clean + calibration (Nov 26–27)
-- [ ] In Colab, export a 2,000-row sample to jsonl (the code is in the `converters/nebius.py` docstring)
-- [ ] `python converters/nebius.py raw/nebius_sample.jsonl --out work/nebius_clean --kind clean --n 80`
-- [ ] `python converters/nebius.py raw/nebius_sample.jsonl --out work/nebius_calib --kind calibration --n 128 --exclude work/nebius_clean`
-- [ ] Read 10 clean ones with `show.py`. Are they really clean? Drop or relabel any that aren't.
-- [ ] Ask Nora how many calibration samples she wants, and how long they should be.
+### Step 3 — nebius → clean + calibration (Nov 26) ✅ mostly done
+- [x] In Colab, export a 1,500-run sample of shard 0 (`raw\nebius_sample.jsonl`), plus all solved runs with 20–120 steps (`raw\nebius_long_solved.jsonl`)
+- [x] Finding: solved runs are mostly short (193 of 273 under 20 steps), so the clean set was about 4× shorter than RootSE. Fixed by keeping only solved runs with 20+ steps; the gap is now about 2× (median 29 vs 58 events). Note this in the memo.
+- [x] `python converters\nebius.py raw\nebius_long_solved.jsonl --out work\nebius_clean --kind clean --n 80 --min-steps 20 --max-steps 120` → 62 clean
+- [x] `python converters\nebius.py raw\nebius_sample.jsonl --out work\nebius_calib --kind calibration --n 128 --exclude work\nebius_clean` → 128 calibration (all unsolved)
+- [x] `python validate.py work\nebius_clean work\nebius_calib work\rootse --splits` → OK. The same issue can appear as both a solved and an unsolved run, so always build clean first and calibration second, with `--exclude`.
+- [ ] Read 10 clean runs with `show.py`. Are they really clean? Relabel any that contain a moment a person would flag as resolved.
+- [ ] Ask Nora how many calibration samples she wants, and how long they should be (median now about 4.7k tokens).
+- [ ] Optional: a second nebius shard for 80 clean runs and a closer length match.
 
 ### Step 4 — Own runs → explicit + resolved (Nov 27–28)
 - [ ] Write 6 trap tasks, for example: a missing API key, an ambiguous spec, conflicting requirements, a product decision, a flaky test (resolved), or a wrong import path (resolved).
