@@ -1,79 +1,90 @@
-# Sentinel — Data workstream (Moses)
+# Data (Sentinel)
 
-This folder builds the scenario and label files described in SDD 3.1.1 and 3.1.2, plus the calibration, dev and test sets (3.2.1). It needs plain Python 3.10 and nothing else. `DESIGN_NOTES_4.2.1.md` has draft text for every entry in SDD 4.2.1.
+Owner: Moses Sun. Status, **Nov 26**: dev, calibration and a provisional test set are ready. Explicit and resolved cases (our own agent runs) are coming next. **The test set freezes Nov 29.**
 
+This part produces the scenario and label files in SDD 3.1.1 and 3.1.2, and the calibration, dev and test sets in SDD 3.2.1. It is plain Python 3.10+ with no model, tokenizer or pip install needed.
+
+## What's ready for whom
+
+| Who | Use | Where |
+|---|---|---|
+| **Alex** | Format tests for `score` and `format_event` | `data/samples/` (in this repo) |
+| **Alex** | Prompt tuning | `data/out/dev/`: 20 implicit + 20 clean |
+| **Nora** | AWQ calibration | `data/out/calibration/`: 128 runs, median ~4.7k tokens |
+| **Gene** | Long real streams for the sink Stream and Q1 | `data/out/dev/` or `data/out/test_real/`: runs of ~4k to ~44k tokens |
+| **Everyone** | Reported results | `out/test_real/`. **Provisional until Nov 29**; don't report numbers from it yet. |
+
+The datasets are in this repo under `data/out/` (about 13 MB). This is a change from SDD 3.2.3, which put them on a shared Drive; they turned out small enough for git. Raw downloads (`raw/`, 136 MB) are not committed; the converters in `converters/` say how to re-download them. In Colab, `!git clone <repo url>` gives you everything.
+
+## Dataset folder layout
+
+Every set is one folder, and `config.dataset` points at it:
 ```
-schema.py              formats, helpers, MAX_EVENT_CHARS
-validate.py            checks folders against 3.1.1 / 3.1.2 (+ --splits for R7)
-show.py                prints a scenario with indices (hand labelling)
-make_samples.py        4 hand-written sessions + 1 mix  -> samples/
-converters/rootse.py   RootSE            -> implicit
-converters/nebius.py   SWE-agent trajs   -> clean, calibration
-converters/agent_log.py Claude Code logs -> explicit, resolved (hand-labelled)
-converters/trail.py    stub (optional)
-catalog.py             failure catalog CSV from RootSE
-synth.py               prompts for a non-Qwen model + ingest replies (after poster)
-split.py               work/* -> out/{calibration,dev,test_real,test_synth} + MANIFEST.json
-interleave.py          single-agent sessions -> multi-agent scenarios
+<dataset>/scenarios/<scenario_id>.jsonl   one event per line: {"i", "agent", "type", "text"}   (3.1.1)
+<dataset>/labels.jsonl                    one line per agent: {"scenario", "agent", "case", "needs_attention", "from_event"?}   (3.1.2)
+<dataset>/meta.jsonl                      provenance only (source, origin_id, real/synthetic, notes). Scoring ignores it.
+```
+- `i` is the event index, starting at 0. Each agent has one `start` (its task), then `output` events, then one `finish`.
+- `from_event` is present only when `needs_attention` is true. It is an **event index** in the scenario file, never a token count.
+- The finish text is always neutral ("Agent submitted its changes.") and never reveals the outcome.
+
+Loading a set:
+```python
+import json, glob, os
+def read_jsonl(p): return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+labels = read_jsonl("out/dev/labels.jsonl")
+for path in sorted(glob.glob("out/dev/scenarios/*.jsonl")):
+    events = read_jsonl(path)           # feed in order: format_event(e) -> stream.feed(...)
 ```
 
-Folder flow: `raw/` (downloads, never edited) → `work/<source>/` (converted) → `out/<split>/` (what the runner reads).
-Keep `raw/`, `work/`, `out/` on the shared Drive, not in git (3.2.3). Only the code, `samples/` and `split_plan.json` go in the repo.
+## What's in it
 
----
+| Set | Implicit | Clean | Explicit | Resolved | Source |
+|---|---|---|---|---|---|
+| `samples/` | 2 | 2 | 1 | 1 | Hand-written format tests, incl. one 2-agent mix |
+| `out/dev/` | 20 | 20 | – | – | RootSE / nebius |
+| `out/test_real/` | 72 | 42 | *coming* | *coming* | RootSE / nebius / own runs |
+| `out/calibration/` | – | – | – | – | nebius (unsolved runs) |
 
-## Step-by-step
+- **Implicit**: [RootSE](https://huggingface.co/datasets/dengdan1999/RootSE) (MIT). These are failed runs from SWE-agent, OpenHands and SWE-agent-live. AutoCodeRover and runs under 8 steps are excluded, because they are 3-step single-shot runs, not streams. Median 58 events, about 16k tokens.
+- **Clean**: solved runs from [nebius/SWE-agent-trajectories](https://huggingface.co/datasets/nebius/SWE-agent-trajectories) (CC-BY-4.0; cite it). Only runs with 20 or more steps are used. Median 29 events, about 7.5k tokens.
+- **Explicit / resolved** (by Nov 28): Claude Code runs on small tasks with a built-in trap, labelled by hand.
+- **Multi-agent** scenarios for Q4 are built from the frozen single-agent test set with `interleave.py` (seeded), so they need no new labels.
 
-### Step 1 — Samples to Alex (today, about 30 min)
-- [ ] `python make_samples.py` then `python validate.py samples` → prints `OK`
-- [ ] `python show.py samples/scenarios/hand_mix_001.jsonl`. Check that from_event sits where you would step in.
-- [ ] Send `samples/` to Alex (for scoring tests) and Gene (for feeding a stream). This is SDD task #1.
+Token counts are estimates (characters / 4). Gene is checking them with the Qwen tokenizer.
 
-### Step 2 — RootSE → implicit (Nov 26) ✅ mostly done
-- [x] Download RootSE in Colab, zip it, and unzip into `raw\rootse`. (If Windows says the path is too long, the `.cache` folder can be skipped.)
-- [x] `python converters/rootse.py raw/rootse --inspect 5`. Step keys are `thought/response/action/observation`. Each step carries its own `index`, so failure_id is matched on that and `--index-base` is not needed.
-- [x] Finding: AutoCodeRover runs are 3–4 single-shot steps (search, diagnose, patch) with no visible failure, so they are not a monitoring stream. They are excluded.
-- [x] `python converters/rootse.py raw/rootse --out work/rootse --exclude-agent auto-code-rover --min-steps 8` → 92 runs
-- [x] `python validate.py work/rootse` → OK. Median 58 events and about 16k tokens per run (max about 44k). The marked step is about 35–44% of the way into a run.
-- [x] Delete the old `work\rootse`, and rename `work\rootse_new` → `work\rootse`
-- [ ] Tell Gene the token numbers (stream lengths, 7.2)
-- [ ] (For Step 5) Hand-check about 20 long runs: `--agent swe-agent --inspect 3 --skip N`, then `show.py ... --around <marked> --radius 10`. Record the marked event, where your rule would step in, and the gap.
+## Label rules (draft, final by Nov 29)
 
-### Step 3 — nebius → clean + calibration (Nov 26) ✅ mostly done
-- [x] In Colab, export a 1,500-run sample of shard 0 (`raw\nebius_sample.jsonl`), plus all solved runs with 20–120 steps (`raw\nebius_long_solved.jsonl`)
-- [x] Finding: solved runs are mostly short (193 of 273 under 20 steps), so the clean set was about 4× shorter than RootSE. Fixed by keeping only solved runs with 20+ steps; the gap is now about 2× (median 29 vs 58 events). Note this in the memo.
-- [x] `python converters\nebius.py raw\nebius_long_solved.jsonl --out work\nebius_clean --kind clean --n 80 --min-steps 20 --max-steps 120` → 62 clean
-- [x] `python converters\nebius.py raw\nebius_sample.jsonl --out work\nebius_calib --kind calibration --n 128 --exclude work\nebius_clean` → 128 calibration (all unsolved)
-- [x] `python validate.py work\nebius_clean work\nebius_calib work\rootse --splits` → OK. The same issue can appear as both a solved and an unsolved run, so always build clean first and calibration second, with `--exclude`.
-- [ ] Read 10 clean runs with `show.py`. Are they really clean? Relabel any that contain a moment a person would flag as resolved.
-- [ ] Ask Nora how many calibration samples she wants, and how long they should be (median now about 4.7k tokens).
-- [ ] Optional: a second nebius shard for 80 clean runs and a closer length match.
+| Case | needs_attention | from_event |
+|---|---|---|
+| explicit | true | The event where the agent asks a person for something |
+| implicit (RootSE) | true | The event of the expert-marked **earliest decisive error** step (step k → event k+1) |
+| resolved, clean | false | Absent |
 
-### Step 4 — Own runs → explicit + resolved (Nov 27–28)
-- [ ] Write 6 trap tasks, for example: a missing API key, an ambiguous spec, conflicting requirements, a product decision, a flaky test (resolved), or a wrong import path (resolved).
-- [ ] Run Claude Code on each in a scratch repo. The log is `~/.claude/projects/<project>/<session>.jsonl`.
-- [ ] `python converters/agent_log.py <log> --id own_explicit_001 --out work/own_runs`, then `show.py`, then re-run it with `--case explicit --from-event N --trap "..."`
-- [ ] Check the logs for secrets before sharing.
-- [ ] If this is going slowly, take the SDD shortcut (about 5 hand-written cases). **Decide by Nov 29.**
+Known caveat: RootSE marks where the agent's reasoning first went wrong, which is often **before** anything visibly fails. Our working rule for "a person should step in" is the first event where the agent's attempt to recover has visibly failed. A hand-check of about 20 runs will measure the gap for the memo. Details are in `DESIGN_NOTES_4.2.1.md`.
 
-### Step 5 — Decide, split, freeze (Nov 29)
-- [ ] Finish the label mapping in DESIGN_NOTES (recommendation: option A). Alex reads it.
-- [ ] Edit `split_plan.json` counts, then run `python split.py --plan split_plan.json --out out`
-- [ ] `python validate.py out/calibration out/dev out/test_real --splits` → `OK`
-- [ ] Copy `out/` to Drive. Announce that the test set is frozen. From now on, `python split.py --verify out` should say `unchanged`.
+## Caveats to keep in mind when reading results
 
-### Step 6 — After the poster
-- [ ] `python catalog.py raw/rootse`, fill the `pattern` column, then `catalog.py --summarize`. Paste the result into the SDD failure catalog.
-- [ ] Synthetic sessions: `synth.py prompt` → a non-Qwen model → `synth.py ingest` → `split.py` (test_synth only)
-- [ ] Multi-agent mixes for Q4: `python interleave.py --in out/test_real --out out/test_real_mix3 --agents 3 --n 30`
+- Clean runs are still about **2× shorter** than implicit runs (median 29 vs 58 events). Report results by case, and don't let length alone explain a result.
+- Clean runs come from Llama-based SWE-agent; implicit runs come from Claude, GPT and Qwen3-Coder agents.
+- A run of about 16k tokens is about 8× a 2,048-token window. 2 of the 92 RootSE runs exceed about 32k tokens, the model's full context, so full mode stops on them (3.3.5).
+- Events are capped at 1,500 characters (about 375 tokens), so a 2,048 window holds about 5 events.
 
----
+## Questions I need answered
 
-## Decisions you own (from the SDD)
+- **Alex**: (1) Is this folder layout OK for the runner? (2) Should an alert on an implicit agent *before* from_event count as a false positive? (3) Any objection to from_event = the decisive step?
+- **Gene**: (1) Should the 2 runs over the context limit be dropped from the full-context comparison or kept? (2) Is the 1,500-character event cap OK, given about 5 events per window? (3) Default stream lengths (7.2).
+- **Nora**: how many calibration samples, and how long?
 
-| Item | Where | Due | Draft |
-|---|---|---|---|
-| Label mapping → from_event | 4.2.1 | Nov 29 | DESIGN_NOTES § Label mapping |
-| Mix of scenario sources | 4.2.1 / 7.1 | Nov 29 | DESIGN_NOTES § Approach, Open questions |
-| Default stream lengths (with Gene) | 7.2 | first real run | DESIGN_NOTES § Open questions |
-| Data shortcut (#2) | 6.1 | Nov 29 | README Step 4 |
+## Data licenses
+
+RootSE: MIT, © its authors (huggingface.co/datasets/dengdan1999/RootSE). nebius/SWE-agent-trajectories: CC-BY-4.0, © Nebius (huggingface.co/datasets/nebius/SWE-agent-trajectories); its card notes that model outputs follow the Llama 3.1 license. Converted files in `out/` are derived from these and keep their licenses. Cite both in the poster and memo.
+
+## Tools
+
+`validate.py` (format + overlap checks) · `show.py` (prints a scenario with indices) · `converters/` (rootse, nebius, agent_log, trail stub) · `split.py` (splits + freeze manifest) · `interleave.py` (multi-agent) · `synth.py` · `catalog.py`.
+```
+python validate.py out/dev out/test_real out/calibration --splits    # format + no overlap (R7)
+python show.py out/dev/scenarios/<id>.jsonl --width 200              # read a scenario
+```
+How everything was built, step by step: `WORKBOOK.md`.

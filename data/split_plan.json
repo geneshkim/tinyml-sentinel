@@ -3,7 +3,7 @@
  "sources": {
   "work/rootse":       {"dev": 20, "test_real": "rest"},
   "work/nebius_clean": {"dev": 20, "test_real": "rest"},
-  "work/nebius_calib": {"calibration": "rest"},
-  "work/own_runs":     {"dev": 2, "test_real": "rest"}
- }
+  "work/nebius_calib": {"calibration": "rest"}
+ },
+ "_note": "Add new sources (work/own_runs, work/synthetic) at the END so existing assignments do not change."
 }
